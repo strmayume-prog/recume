@@ -3,6 +3,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from fastapi import FastAPI, Request
 import requests, asyncio, os
 from requests.auth import HTTPBasicAuth
+import asyncio
+import threading
+from telegram.ext import ApplicationBuilder, CommandHandler
 
 # 🔑 Variáveis de ambiente
 BOT_TOKEN = os.getenv("BOT_TOKEN")
