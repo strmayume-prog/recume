@@ -74,13 +74,15 @@ async def paypal_webhook(request: Request):
     return {"status": "ok"}
 
 @fastapi_app.get("/")
-async def home():
-    return {"status": "online"}
+def start_telegram():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("assinar", assinar))
+    app.run_polling(stop_signals=None)  # desativa signal handler
 
-# ---------- EXECUÇÃO ----------
-def start_all():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    run_telegram()
+# Inicia o bot do Telegram em thread paralela sem signal handler
+threading.Thread(target=start_telegram, daemon=True).start()
 
-Thread(target=start_all).start()
+# Inicia o servidor FastAPI (Render usa este processo)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=10000)
