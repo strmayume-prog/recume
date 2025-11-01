@@ -6,10 +6,10 @@ services:
     startCommand: "uvicorn bot:fastapi_app --host 0.0.0.0 --port 10000"
     envVars:
       - key: BOT_TOKEN
-        value: "COLE_SEU_TOKEN_DO_TELEGRAM"
+        value: "7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4"
       - key: GROUP_ID
-        value: "-100123456789"
+        value: "-1002114282154"
       - key: PAYPAL_CLIENT_ID
-        value: "COLE_SEU_CLIENT_ID"
+        value: "AS4GJYXde9JWZsuocnMO62bn509mmeFM5kycHj-gDvEzCONCXuzCeoU6Kx7I1K2tKRCQrbR_jH8-PwrB"
       - key: PAYPAL_SECRET
-        value: "COLE_SEU_SECRET"
+        value: "EEGEKpyQSO0FKtEmLmJtJObWaUQstYsemwXcDLAjD0tZ8pWbvGW1Hvur4Oh6BDNx6jXnMaS32DLo4RO6"
