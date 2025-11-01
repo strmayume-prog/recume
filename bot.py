@@ -14,17 +14,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 🔑 Variáveis de Ambiente - COM VALORES DIRETOS PARA TESTE
+# 🔑 Variáveis de Ambiente
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4").strip()
 GROUP_ID = os.getenv("GROUP_ID", "-1002114282154").strip()
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "AS4GJYXde9JWZsuocnMO62bn509mmeFM5kycHj-gDvEzCONCXuzCeoU6Kx7I1K2tKRCQrbR_jH8-PwrB").strip()
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "EEGEKpyQSO0FKtEmLmJtJObWaUQstYsemwXcDLAjD0tZ8pWbvGW1Hvur4Oh6BDNx6jXnMaS32DLo4RO6").strip()
 PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
-# Verificar se as variáveis estão carregadas
-logger.info(f"BOT_TOKEN: {BOT_TOKEN[:10]}...")
-logger.info(f"GROUP_ID: {GROUP_ID}")
-logger.info(f"PAYPAL_CLIENT_ID: {PAYPAL_CLIENT_ID[:10]}...")
+# Global para armazenar a aplicação do bot
+bot_application = None
 
 # 🌟 Telegram Bot Functions
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,46 +132,70 @@ async def assinar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Erro interno. Tente novamente mais tarde.")
 
 # 🔄 Inicialização do Bot
-async def start_bot():
-    """Inicia o bot Telegram em background"""
+async def setup_bot():
+    """Configura e inicia o bot Telegram"""
     try:
-        logger.info("🔄 Iniciando Telegram Bot...")
+        logger.info("🔄 Configurando Telegram Bot...")
         
         # Verificar token
-        if not BOT_TOKEN or " " in BOT_TOKEN:
-            logger.error("Token inválido ou vazio")
+        if not BOT_TOKEN:
+            logger.error("Token não encontrado!")
             return None
             
+        # Criar aplicação
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Adicionar handlers
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("assinar", assinar_command))
         
-        # Inicializar
+        # Inicializar (sem polling ainda)
         await application.initialize()
         await application.start()
-        await application.updater.start_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
         
-        logger.info("✅ Bot Telegram iniciado com sucesso!")
+        logger.info("✅ Bot Telegram configurado com sucesso!")
         return application
         
     except Exception as e:
-        logger.error(f"❌ Falha ao iniciar bot: {str(e)}")
+        logger.error(f"❌ Falha ao configurar bot: {str(e)}")
         return None
+
+async def start_polling():
+    """Inicia o polling em uma task separada"""
+    global bot_application
+    try:
+        if bot_application:
+            logger.info("🔄 Iniciando polling do bot...")
+            await bot_application.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES
+            )
+            logger.info("✅ Polling iniciado com sucesso!")
+    except Exception as e:
+        logger.error(f"❌ Erro no polling: {str(e)}")
 
 # 🌟 FastAPI Lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global bot_application
     # Startup
     logger.info("🚀 Iniciando aplicação...")
-    asyncio.create_task(start_bot())
+    
+    # Configurar bot
+    bot_application = await setup_bot()
+    
+    # Iniciar polling em background
+    if bot_application:
+        asyncio.create_task(start_polling())
+    
     yield
+    
     # Shutdown
     logger.info("🛑 Parando aplicação...")
+    if bot_application:
+        await bot_application.updater.stop()
+        await bot_application.stop()
+        await bot_application.shutdown()
 
 # 🌟 FastAPI App
 app = FastAPI(title="Shinmeta28 Bot", lifespan=lifespan)
@@ -181,16 +203,18 @@ app = FastAPI(title="Shinmeta28 Bot", lifespan=lifespan)
 # 🚀 Rotas FastAPI
 @app.get("/")
 async def root():
+    bot_status = "running" if bot_application else "stopped"
     return {
         "status": "online", 
         "service": "Shinmeta28 Bot",
         "bot": "shinmeta28_bot",
-        "bot_status": "running"
+        "bot_status": bot_status
     }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "bot": "running"}
+    bot_status = "running" if bot_application else "stopped"
+    return {"status": "healthy", "bot": bot_status}
 
 @app.get("/success")
 async def success_page():
