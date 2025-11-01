@@ -6,10 +6,10 @@ from requests.auth import HTTPBasicAuth
 from threading import Thread
 
 # 🔑 VARIÁVEIS DE AMBIENTE
-BOT_TOKEN = os.getenv("7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4")
-GROUP_ID = os.getenv("-1002114282154")  # exemplo: -100123456789
-PAYPAL_CLIENT_ID = os.getenv("AS4GJYXde9JWZsuocnMO62bn509mmeFM5kycHj-gDvEzCONCXuzCeoU6Kx7I1K2tKRCQrbR_jH8-PwrB")
-PAYPAL_SECRET = os.getenv("EEGEKpyQSO0FKtEmLmJtJObWaUQstYsemwXcDLAjD0tZ8pWbvGW1Hvur4Oh6BDNx6jXnMaS32DLo4RO6")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GROUP_ID = os.getenv("GROUP_ID")
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
+PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
 PAYPAL_API = "https://api-m.sandbox.paypal.com"  # usar produção depois
 
 # ---------- TELEGRAM BOT ----------
