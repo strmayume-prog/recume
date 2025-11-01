@@ -1,72 +1,98 @@
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from fastapi import FastAPI, Request
-import requests, os, asyncio, threading
-from requests.auth import HTTPBasicAuth
+from telegram.ext import Application, CommandHandler, ContextTypes
+from fastapi import FastAPI
+import requests
+import os
 import logging
+import asyncio
 
-# 🔑 Configurar logging
-logging.basicConfig(level=logging.INFO)
+# 🔧 Configuração de Logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# 🔑 Variáveis de ambiente
+# 🔑 Variáveis de Ambiente
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 GROUP_ID = os.getenv("GROUP_ID", "").strip()
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "").strip()
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "").strip()
 PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
-# Global variable to hold the application instance
-telegram_app = None
+# 🌟 FastAPI App
+app = FastAPI(title="Telegram Bot + PayPal")
 
-# ---------- TELEGRAM BOT ----------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Comando /start recebido de {update.effective_user.id}")
-    await update.message.reply_text("👋 Olá! Use /assinar para adquirir sua assinatura.")
+# 🌟 Telegram Bot
+def create_bot_application():
+    """Cria e configura a aplicação do Telegram Bot"""
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Adicionar handlers
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("assinar", assinar_command))
+    
+    return application
 
-async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para o comando /start"""
+    user = update.effective_user
+    logger.info(f"Usuário {user.id} usou /start")
+    
+    welcome_text = (
+        "👋 *Bem-vindo ao Shinmeta28 Bot!*\n\n"
+        "Para adquirir acesso ao grupo VIP, use o comando:\n"
+        "`/assinar`\n\n"
+        "Valor: R$ 18,99/mês"
+    )
+    
+    await update.message.reply_text(welcome_text, parse_mode='Markdown')
+
+async def assinar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para o comando /assinar"""
     try:
         user_id = update.effective_user.id
-        logger.info(f"Comando /assinar recebido de {user_id}")
+        logger.info(f"Usuário {user_id} solicitou assinatura")
 
-        # Verificar se as variáveis de ambiente estão carregadas
-        if not all([BOT_TOKEN, PAYPAL_CLIENT_ID, PAYPAL_SECRET]):
-            await update.message.reply_text("❌ Erro de configuração. Tente novamente mais tarde.")
-            return
-
-        # Obter token PayPal
-        res = requests.post(
+        # 1. Obter Access Token do PayPal
+        auth_response = requests.post(
             f"{PAYPAL_API}/v1/oauth2/token",
             data={"grant_type": "client_credentials"},
-            auth=HTTPBasicAuth(PAYPAL_CLIENT_ID, PAYPAL_SECRET)
+            auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET),
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
         
-        if res.status_code != 200:
-            logger.error(f"Erro PayPal Auth: {res.status_code} - {res.text}")
-            await update.message.reply_text("❌ Erro no processamento. Tente novamente.")
+        if auth_response.status_code != 200:
+            logger.error(f"Falha na autenticação PayPal: {auth_response.text}")
+            await update.message.reply_text("❌ Erro temporário. Tente novamente em alguns instantes.")
             return
-            
-        access_token = res.json().get("access_token")
-        if not access_token:
-            await update.message.reply_text("❌ Erro de autenticação.")
-            return
+        
+        access_token = auth_response.json()["access_token"]
+        logger.info("Token PayPal obtido com sucesso")
 
-        # Criar ordem PayPal
-        order_data = {
+        # 2. Criar Ordem no PayPal
+        order_payload = {
             "intent": "CAPTURE",
-            "purchase_units": [{
-                "amount": {"currency_code": "BRL", "value": "18.99"},
-                "custom_id": str(user_id)
-            }],
+            "purchase_units": [
+                {
+                    "amount": {
+                        "currency_code": "BRL",
+                        "value": "18.99"
+                    },
+                    "custom_id": str(user_id)
+                }
+            ],
             "application_context": {
-                "return_url": "https://recume-1.onrender.com/success",
-                "cancel_url": "https://recume-1.onrender.com/cancel"
+                "brand_name": "Shinmeta28 VIP",
+                "return_url": "https://recume.onrender.com/success",
+                "cancel_url": "https://recume.onrender.com/cancel",
+                "user_action": "PAY_NOW"
             }
         }
 
-        res = requests.post(
+        order_response = requests.post(
             f"{PAYPAL_API}/v2/checkout/orders",
-            json=order_data,
+            json=order_payload,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
@@ -74,120 +100,144 @@ async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         )
 
-        if res.status_code != 201:
-            logger.error(f"Erro PayPal Order: {res.status_code} - {res.text}")
-            await update.message.reply_text("❌ Erro ao criar pedido.")
+        if order_response.status_code != 201:
+            logger.error(f"Falha ao criar ordem: {order_response.text}")
+            await update.message.reply_text("❌ Erro ao processar pagamento.")
             return
 
-        order = res.json()
-        link_pagamento = None
-        for link in order.get("links", []):
+        order_data = order_response.json()
+        
+        # 3. Encontrar link de aprovação
+        approval_link = None
+        for link in order_data.get("links", []):
             if link.get("rel") == "approve":
-                link_pagamento = link.get("href")
+                approval_link = link.get("href")
                 break
 
-        if not link_pagamento:
+        if not approval_link:
             await update.message.reply_text("❌ Erro ao gerar link de pagamento.")
             return
 
-        await update.message.reply_text(
-            f"💳 **Assinatura Premium**\n\n"
-            f"Valor: R$ 18,99\n"
-            f"Clique no link abaixo para pagar:\n"
-            f"{link_pagamento}\n\n"
-            f"Após o pagamento, você será adicionado automaticamente ao grupo VIP!"
+        # 4. Enviar mensagem com o link
+        message_text = (
+            "💳 *ASSINATURA VIP*\n\n"
+            "• Acesso ao grupo exclusivo\n"
+            "• Valor: R$ 18,99\n"
+            "• Pagamento único\n\n"
+            f"[👉 CLIQUE AQUI PARA PAGAR]({approval_link})\n\n"
+            "_Após o pagamento, você será adicionado automaticamente ao grupo VIP._"
         )
-        logger.info(f"Link de pagamento enviado para {user_id}")
+        
+        await update.message.reply_text(
+            message_text, 
+            parse_mode='Markdown',
+            disable_web_page_preview=False
+        )
+        
+        logger.info(f"Link de pagamento enviado para usuário {user_id}")
 
     except Exception as e:
-        logger.error(f"Erro em /assinar: {e}")
-        await update.message.reply_text("❌ Ocorreu um erro. Tente novamente.")
+        logger.error(f"Erro no comando /assinar: {str(e)}")
+        await update.message.reply_text("❌ Erro interno. Tente novamente mais tarde.")
 
-# Função para inicializar e rodar o bot
-async def initialize_bot():
-    global telegram_app
+# 🔄 Inicialização do Bot
+async def start_bot():
+    """Inicia o bot Telegram em background"""
     try:
-        logger.info("Iniciando bot Telegram...")
-        
-        # Criar a aplicação
-        telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-        
-        # Adicionar handlers
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CommandHandler("assinar", assinar))
+        logger.info("🔄 Iniciando Telegram Bot...")
+        application = create_bot_application()
         
         # Inicializar
-        await telegram_app.initialize()
-        await telegram_app.start()
-        
-        # Usar polling para receber mensagens
-        await telegram_app.updater.start_polling(
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES
         )
         
-        logger.info("✅ Bot Telegram iniciado com sucesso com polling!")
+        logger.info("✅ Bot Telegram iniciado com sucesso!")
+        return application
         
     except Exception as e:
-        logger.error(f"❌ Erro ao iniciar bot: {e}")
+        logger.error(f"❌ Falha ao iniciar bot: {str(e)}")
+        return None
 
-# Função para rodar em thread
-def run_bot():
-    asyncio.run(initialize_bot())
+# 🚀 Rotas FastAPI
+@app.get("/")
+async def root():
+    return {
+        "status": "online", 
+        "service": "Shinmeta28 Bot",
+        "bot": "shinmeta28_bot"
+    }
 
-# ---------- FASTAPI SETUP ----------
-fastapi_app = FastAPI()
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "bot": "running"}
 
-@fastapi_app.get("/")
-def home():
-    return {"status": "ok", "message": "Bot está rodando!"}
-
-@fastapi_app.get("/health")
-def health():
-    bot_status = "running" if telegram_app else "stopped"
-    return {"status": "ok", "bot": bot_status}
-
-@fastapi_app.get("/success")
-def success():
+@app.get("/success")
+async def success_page():
     return """
+    <!DOCTYPE html>
     <html>
-        <body>
-            <h1>Pagamento Aprovado! ✅</h1>
-            <p>Seu pagamento foi aprovado com sucesso!</p>
-            <p>Você será adicionado ao grupo VIP em instantes.</p>
-            <p>Volte ao Telegram e aguarde a confirmação.</p>
-        </body>
+    <head>
+        <title>Pagamento Aprovado - Shinmeta28</title>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .success { color: #22c55e; font-size: 24px; }
+            .info { color: #666; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="success">✅ Pagamento Aprovado!</div>
+        <div class="info">Você será adicionado ao grupo VIP em instantes.</div>
+        <div class="info">Volte ao Telegram para acessar o conteúdo exclusivo.</div>
+    </body>
     </html>
     """
 
-@fastapi_app.get("/cancel")
-def cancel():
+@app.get("/cancel")
+async def cancel_page():
     return """
+    <!DOCTYPE html>
     <html>
-        <body>
-            <h1>Pagamento Cancelado ❌</h1>
-            <p>Seu pagamento foi cancelado.</p>
-            <p>Você pode tentar novamente quando quiser.</p>
-        </body>
+    <head>
+        <title>Pagamento Cancelado - Shinmeta28</title>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .cancel { color: #ef4444; font-size: 24px; }
+            .info { color: #666; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="cancel">❌ Pagamento Cancelado</div>
+        <div class="info">Você pode tentar novamente quando quiser.</div>
+        <div class="info">Use /assinar no bot para reiniciar o processo.</div>
+    </body>
     </html>
     """
 
-@fastapi_app.post("/paypal-webhook")
-async def paypal_webhook(request: Request):
+@app.post("/paypal-webhook")
+async def paypal_webhook(request: dict):
+    """Webhook para processar pagamentos do PayPal"""
     try:
-        data = await request.json()
-        event_type = data.get("event_type")
-        logger.info(f"Webhook recebido: {event_type}")
+        event_type = request.get("event_type")
+        logger.info(f"Webhook PayPal recebido: {event_type}")
 
         if event_type == "PAYMENT.CAPTURE.COMPLETED":
-            custom_id = data.get("resource", {}).get("custom_id")
+            resource = request.get("resource", {})
+            custom_id = resource.get("custom_id")
+            
             if custom_id:
                 user_id = int(custom_id)
+                logger.info(f"Pagamento confirmado para usuário {user_id}")
                 
                 # Adicionar usuário ao grupo
-                url = f"https://api.telegram.org/bot{BOT_TOKEN}/approveChatJoinRequest"
+                telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/approveChatJoinRequest"
                 response = requests.post(
-                    url,
+                    telegram_url,
                     json={
                         "chat_id": GROUP_ID,
                         "user_id": user_id
@@ -195,45 +245,51 @@ async def paypal_webhook(request: Request):
                 )
                 
                 if response.status_code == 200:
-                    logger.info(f"✅ Usuário {user_id} aprovado no grupo")
+                    logger.info(f"✅ Usuário {user_id} adicionado ao grupo VIP")
                     
-                    # Tentar enviar mensagem direta também
+                    # Notificar usuário via Telegram
                     try:
                         requests.post(
                             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                             json={
                                 "chat_id": user_id,
-                                "text": "✅ Pagamento confirmado! Você foi adicionado ao grupo VIP. Acesse: https://t.me/c/2114282154/1"
+                                "text": "✅ *Pagamento confirmado!*\\n\\nAgora você faz parte do grupo VIP!\\n\\nAcesse: https://t.me/c/2114282154/1",
+                                "parse_mode": "Markdown"
                             }
                         )
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Erro ao notificar usuário: {e}")
                 else:
-                    logger.error(f"Erro ao adicionar usuário: {response.text}")
-            
-        return {"status": "ok"}
+                    logger.error(f"Falha ao adicionar usuário: {response.text}")
+        
+        return {"status": "success"}
+        
     except Exception as e:
-        logger.error(f"Erro no webhook: {e}")
+        logger.error(f"Erro no webhook: {str(e)}")
         return {"status": "error"}
 
-# ---------- INÍCIO DO SERVIÇO ----------
-if __name__ == "__main__":
+# 🎯 Inicialização da Aplicação
+@app.on_event("startup")
+async def startup_event():
+    """Inicia o bot quando a aplicação FastAPI iniciar"""
     logger.info("🚀 Iniciando aplicação...")
-    
-    # Verificar variáveis de ambiente
-    required_vars = ["BOT_TOKEN", "GROUP_ID", "PAYPAL_CLIENT_ID", "PAYPAL_SECRET"]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    
-    if missing_vars:
-        logger.error(f"Variáveis faltando: {missing_vars}")
-    else:
-        logger.info("Todas as variáveis de ambiente estão presentes")
-    
-    # Inicia o bot em uma thread separada
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    logger.info("Thread do bot iniciada")
+    asyncio.create_task(start_bot())
 
-    # Inicia o FastAPI
+# ⚠️ Execução Principal
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=10000, log_level="info")
+    
+    # Verificar variáveis críticas
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN não encontrado!")
+    if not PAYPAL_CLIENT_ID:
+        logger.error("❌ PAYPAL_CLIENT_ID não encontrado!")
+    
+    # Iniciar servidor
+    uvicorn.run(
+        "bot:app",
+        host="0.0.0.0",
+        port=10000,
+        log_level="info",
+        reload=False
+    )
