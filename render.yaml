@@ -6,10 +6,14 @@ services:
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
+        fromSecret: false
         value: "7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4"
       - key: GROUP_ID
+        fromSecret: false  
         value: "-1002114282154"
       - key: PAYPAL_CLIENT_ID
+        fromSecret: false
         value: "AS4GJYXde9JWZsuocnMO62bn509mmeFM5kycHj-gDvEzCONCXuzCeoU6Kx7I1K2tKRCQrbR_jH8-PwrB"
       - key: PAYPAL_SECRET
+        fromSecret: false
         value: "EEGEKpyQSO0FKtEmLmJtJObWaUQstYsemwXcDLAjD0tZ8pWbvGW1Hvur4Oh6BDNx6jXnMaS32DLo4RO6"
