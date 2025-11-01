@@ -3,15 +3,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from fastapi import FastAPI, Request
 import requests, asyncio, os
 from requests.auth import HTTPBasicAuth
-from threading import Thread
-import threading
 
-# 🔑 VARIÁVEIS DE AMBIENTE
+# 🔑 Variáveis de ambiente
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = os.getenv("GROUP_ID")
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
-PAYPAL_API = "https://api-m.sandbox.paypal.com"  # usar produção depois
+PAYPAL_API = "https://api-m.sandbox.paypal.com"  # modo teste
 
 # ---------- TELEGRAM BOT ----------
 async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,8 +31,8 @@ async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "custom_id": str(user_id)
         }],
         "application_context": {
-            "return_url": "https://seuapp.onrender.com/success",
-            "cancel_url": "https://seuapp.onrender.com/cancel"
+            "return_url": "https://recume-1.onrender.com/success",
+            "cancel_url": "https://recume-1.onrender.com/cancel"
         }
     }
 
@@ -51,12 +49,7 @@ async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💳 Pague sua assinatura de R$18,99 aqui:\n{link_pagamento}"
     )
 
-def run_telegram():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("assinar", assinar))
-    app.run_polling()
-
-# ---------- FASTAPI SERVIDOR ----------
+# ---------- FASTAPI ----------
 fastapi_app = FastAPI()
 
 @fastapi_app.post("/paypal-webhook")
@@ -66,7 +59,6 @@ async def paypal_webhook(request: Request):
 
     if event_type == "PAYMENT.CAPTURE.COMPLETED":
         user_id = int(data["resource"]["custom_id"])
-        # adicionar usuário ao grupo
         requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/inviteChatMember",
             json={"chat_id": GROUP_ID, "user_id": user_id}
@@ -75,15 +67,19 @@ async def paypal_webhook(request: Request):
     return {"status": "ok"}
 
 @fastapi_app.get("/")
-def start_telegram():
+async def home():
+    return {"status": "online"}
+
+# ---------- EXECUÇÃO INTEGRADA ----------
+async def start_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("assinar", assinar))
-    app.run_polling(stop_signals=None)  # desativa signal handler
+    print("🤖 Bot do Telegram iniciado com sucesso.")
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await asyncio.Event().wait()  # mantém rodando
 
-# Inicia o bot do Telegram em thread paralela sem signal handler
-threading.Thread(target=start_telegram, daemon=True).start()
-
-# Inicia o servidor FastAPI (Render usa este processo)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=10000)
+@fastapi_app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(start_bot())
