@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 import requests, asyncio, os
 from requests.auth import HTTPBasicAuth
 from threading import Thread
+import threading
 
 # 🔑 VARIÁVEIS DE AMBIENTE
 BOT_TOKEN = os.getenv("BOT_TOKEN")
