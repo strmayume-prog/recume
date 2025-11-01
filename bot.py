@@ -49,37 +49,25 @@ async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💳 Pague sua assinatura de R$18,99 aqui:\n{link_pagamento}"
     )
 
-# ---------- FASTAPI ----------
-fastapi_app = FastAPI()
-
-@fastapi_app.post("/paypal-webhook")
-async def paypal_webhook(request: Request):
-    data = await request.json()
-    event_type = data.get("event_type")
-
-    if event_type == "PAYMENT.CAPTURE.COMPLETED":
-        user_id = int(data["resource"]["custom_id"])
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/inviteChatMember",
-            json={"chat_id": GROUP_ID, "user_id": user_id}
-        )
-        print(f"✅ Usuário {user_id} pago e adicionado ao grupo")
-    return {"status": "ok"}
-
-@fastapi_app.get("/")
-async def home():
-    return {"status": "online"}
-
-# ---------- EXECUÇÃO INTEGRADA ----------
-async def start_bot():
+# --- BOT SETUP ---
+def start_bot():
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    loop = asyncio.get_event_loop()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("assinar", assinar))
-    print("🤖 Bot do Telegram iniciado com sucesso.")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await asyncio.Event().wait()  # mantém rodando
+    loop.run_until_complete(app.initialize())
+    loop.create_task(app.start())
+    loop.run_forever()
 
-@fastapi_app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(start_bot())
+# --- FASTAPI SETUP ---
+@fastapi_app.get("/")
+def home():
+    return {"status": "ok", "message": "Bot está rodando no Render!"}
+
+if __name__ == "__main__":
+    # Inicia o bot em uma thread paralela
+    threading.Thread(target=start_bot, daemon=True).start()
+
+    # Inicia FastAPI (Render precisa disso para manter o serviço ativo)
+    import uvicorn
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=10000)
