@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: paypal-telegram-bot
+    name: shinmeta28-bot
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python bot.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
         value: "7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4"
