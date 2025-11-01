@@ -38,7 +38,7 @@ async def assinar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         headers={"Authorization": f"Bearer {access_token}"}
     )
     order = res.json()
-    link_pagamento = next(l["href"] for l in order["links"] if l["rel"] == "approve"])
+    link_pagamento = next(l["href"] for l in order["links"] if l["rel"] == "approve")
     await update.message.reply_text(f"💳 Pague sua assinatura de R$18,99 aqui:\n{link_pagamento}")
 
 # Cria FastAPI
