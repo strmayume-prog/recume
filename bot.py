@@ -63,6 +63,8 @@ def start_bot():
     loop.run_forever()
 
 # --- FASTAPI SETUP ---
+fastapi_app = FastAPI()
+
 @fastapi_app.get("/")
 def home():
     return {"status": "ok", "message": "Bot está rodando no Render!"}
