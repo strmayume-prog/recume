@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: paypal-telegram-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn bot:fastapi_app --host 0.0.0.0 --port 10000"
+    envVars:
+      - key: BOT_TOKEN
+        value: "COLE_SEU_TOKEN_DO_TELEGRAM"
+      - key: GROUP_ID
+        value: "-100123456789"
+      - key: PAYPAL_CLIENT_ID
+        value: "COLE_SEU_CLIENT_ID"
+      - key: PAYPAL_SECRET
+        value: "COLE_SEU_SECRET"
