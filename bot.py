@@ -5,6 +5,7 @@ import requests
 import os
 import logging
 import asyncio
+from contextlib import asynccontextmanager
 
 # 🔧 Configuração de Logging
 logging.basicConfig(
@@ -13,27 +14,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 🔑 Variáveis de Ambiente
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-GROUP_ID = os.getenv("GROUP_ID", "").strip()
-PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "").strip()
-PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "").strip()
+# 🔑 Variáveis de Ambiente - COM VALORES DIRETOS PARA TESTE
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7602116178:AAGgcZtmvISxyK8WcCmQVyG9ra8e_SPHWc4").strip()
+GROUP_ID = os.getenv("GROUP_ID", "-1002114282154").strip()
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "AS4GJYXde9JWZsuocnMO62bn509mmeFM5kycHj-gDvEzCONCXuzCeoU6Kx7I1K2tKRCQrbR_jH8-PwrB").strip()
+PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "EEGEKpyQSO0FKtEmLmJtJObWaUQstYsemwXcDLAjD0tZ8pWbvGW1Hvur4Oh6BDNx6jXnMaS32DLo4RO6").strip()
 PAYPAL_API = "https://api-m.sandbox.paypal.com"
 
-# 🌟 FastAPI App
-app = FastAPI(title="Telegram Bot + PayPal")
+# Verificar se as variáveis estão carregadas
+logger.info(f"BOT_TOKEN: {BOT_TOKEN[:10]}...")
+logger.info(f"GROUP_ID: {GROUP_ID}")
+logger.info(f"PAYPAL_CLIENT_ID: {PAYPAL_CLIENT_ID[:10]}...")
 
-# 🌟 Telegram Bot
-def create_bot_application():
-    """Cria e configura a aplicação do Telegram Bot"""
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Adicionar handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("assinar", assinar_command))
-    
-    return application
-
+# 🌟 Telegram Bot Functions
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para o comando /start"""
     user = update.effective_user
@@ -145,7 +138,17 @@ async def start_bot():
     """Inicia o bot Telegram em background"""
     try:
         logger.info("🔄 Iniciando Telegram Bot...")
-        application = create_bot_application()
+        
+        # Verificar token
+        if not BOT_TOKEN or " " in BOT_TOKEN:
+            logger.error("Token inválido ou vazio")
+            return None
+            
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Adicionar handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("assinar", assinar_command))
         
         # Inicializar
         await application.initialize()
@@ -162,13 +165,27 @@ async def start_bot():
         logger.error(f"❌ Falha ao iniciar bot: {str(e)}")
         return None
 
+# 🌟 FastAPI Lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Iniciando aplicação...")
+    asyncio.create_task(start_bot())
+    yield
+    # Shutdown
+    logger.info("🛑 Parando aplicação...")
+
+# 🌟 FastAPI App
+app = FastAPI(title="Shinmeta28 Bot", lifespan=lifespan)
+
 # 🚀 Rotas FastAPI
 @app.get("/")
 async def root():
     return {
         "status": "online", 
         "service": "Shinmeta28 Bot",
-        "bot": "shinmeta28_bot"
+        "bot": "shinmeta28_bot",
+        "bot_status": "running"
     }
 
 @app.get("/health")
@@ -268,28 +285,18 @@ async def paypal_webhook(request: dict):
         logger.error(f"Erro no webhook: {str(e)}")
         return {"status": "error"}
 
-# 🎯 Inicialização da Aplicação
-@app.on_event("startup")
-async def startup_event():
-    """Inicia o bot quando a aplicação FastAPI iniciar"""
-    logger.info("🚀 Iniciando aplicação...")
-    asyncio.create_task(start_bot())
-
 # ⚠️ Execução Principal
 if __name__ == "__main__":
     import uvicorn
     
-    # Verificar variáveis críticas
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN não encontrado!")
-    if not PAYPAL_CLIENT_ID:
-        logger.error("❌ PAYPAL_CLIENT_ID não encontrado!")
+    logger.info("=== INICIANDO SERVIDOR ===")
+    logger.info(f"BOT_TOKEN presente: {bool(BOT_TOKEN)}")
+    logger.info(f"PAYPAL_CLIENT_ID presente: {bool(PAYPAL_CLIENT_ID)}")
     
     # Iniciar servidor
     uvicorn.run(
-        "bot:app",
+        app,
         host="0.0.0.0",
         port=10000,
-        log_level="info",
-        reload=False
+        log_level="info"
     )
